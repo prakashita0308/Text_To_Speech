@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gesture to Speech</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f7f7f7;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+        h1 {
+            color: #333;
+        }
+        #video {
+            border: 2px solid #000;
+            margin-top: 20px;
+        }
+        #status {
+            margin-top: 10px;
+            font-size: 16px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Gesture to Speech</h1>
+    <video id="video" width="640" height="480" autoplay></video>
+    <p id="status">Loading model...</p>
+
+    <script src="https://cdn.jsdelivr.net/npm/handtrackjs@0.0.11/dist/handtrack.min.js"></script>
+    <script>
+        let model;
+        const video = document.getElementById("video");
+        const statusElement = document.getElementById("status");
+
+        let previousHandPosition = null;
+        let lastWaveTime = 0;
+        let isGestureDetected = false;
+
+        // Initialize the handtrack.js model with optimized configuration
+        const runDetection = () => {
+            handTrack.load({ flipHorizontal: true, maxNumBoxes: 1, iouThreshold: 0.5, scoreThreshold: 0.6 }).then((loadedModel) => {
+                model = loadedModel;
+                statusElement.textContent = "Model loaded. Please wave your hand in front of the camera.";
+                detectHands();
+            });
+        };
+
+        // Start detecting hands continuously
+        const detectHands = () => {
+            model.detect(video).then(predictions => {
+                if (predictions.length > 0) {
+                    const gesture = identifyWaveGesture(predictions);
+                    if (gesture === "wave" && !isGestureDetected) {
+                        isGestureDetected = true;
+                        speakGesture("Hello!");
+                    }
+                } else {
+                    isGestureDetected = false;
+                }
+                requestAnimationFrame(detectHands);
+            });
+        };
+
+        // Identify wave gestures based on hand movement
+        const identifyWaveGesture = (predictions) => {
+            const handBoundingBox = predictions[0].bbox;
+            const handCenter = {
+                x: handBoundingBox[0] + handBoundingBox[2] / 2,
+                y: handBoundingBox[1] + handBoundingBox[3] / 2
+            };
+
+            if (previousHandPosition !== null) {
+                const movement = calculateHandMovement(previousHandPosition, handCenter);
+                
+                // Detect "wave" gesture: significant left-right motion
+                if (movement > 50 && Math.abs(handCenter.x - previousHandPosition.x) > 100) {
+                    const currentTime = Date.now();
+                    if (currentTime - lastWaveTime > 1000) {
+                        lastWaveTime = currentTime;
+                        previousHandPosition = handCenter;  // Reset the position after detecting
+                        return "wave";
+                    }
+                }
+            }
+            
+            previousHandPosition = handCenter; // Update the position
+            return null;
+        };
+
+        // Calculate movement distance between the current and previous hand position
+        const calculateHandMovement = (prevPosition, currentPosition) => {
+            const dx = currentPosition.x - prevPosition.x;
+            const dy = currentPosition.y - prevPosition.y;
+            return Math.sqrt(dx * dx + dy * dy);
+        };
+
+        // Speak the detected gesture
+        const speakGesture = (gesture) => {
+            const msg = new SpeechSynthesisUtterance(gesture);
+            speechSynthesis.speak(msg);
+        };
+
+        // Set up webcam
+        navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
+            video.srcObject = stream;
+            runDetection();
+        }).catch((err) => {
+            statusElement.textContent = "Failed to access webcam.";
+        });
+
+    </script>
+
+</body>
+</html>
